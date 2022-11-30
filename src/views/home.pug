@@ -6,16 +6,109 @@ html(lang="en")
     meta(name="viewport" content="width=device-width, initial-scale=1.0")
     title Noom
     link(rel="stylesheet" href="https://unpkg.com/mvp.css@1.12/mvp.css")
+    style.
+      #mainSection {
+        height: 500px;
+        display: flex;
+      }
+      #roomAndChat, #name, #inputForm {
+        border: 1px solid var(--color-bg-secondary);
+        border-radius: var(--border-radius);
+        box-shadow: var(--box-shadow) var(--color-shadow);
+        display: block;
+        max-width: var(--width-card-wide);
+        min-width: var(--width-card);
+        padding: 1.5rem;
+        text-align: var(--justify-normal);
+      }
+      #roomAndChat {
+        box-sizing: border-box;
+        width: 80%;
+        height: 100%;
+        margin: 0 1rem 1rem 0;
+      }
+      #roomAndChat h3 {margin-top:0;}
+      #roomAndChat div {
+        height: 100%;
+      }
+      #roomAndChat ul {
+        overflow-y: auto;
+        height: 90%;
+      }
+      #roomAndChat li {
+        word-break: break-all;
+        pading-right: 1rem;
+      }
+      #name {
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+      }
+      #name p {
+        height: 100%;
+        text-align: center;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+      }
+      #name >button {
+        width:100%
+      }
+      span {
+        margin-top: 1.5rem;
+        font-size: 1.2rem;
+        font-weight: 900;
+      }
+      #inputForm {
+        margin-top: 1rem;
+        max-width: 100%;
+      }
+
+      form input {
+        margin: 0 1rem 0 0;
+      }
+      form {
+        box-shadow: none;
+        border: none;
+        padding: 0;
+        display: flex;
+        align-items: center;
+        margin: auto;
+      }
+      button {
+        padding: 0.2rem;
+        margin: 0;
+        width: 20%;
+        min-width: 100px;
+      }
+
   body
     header
       h1 Noom
-    main
-      form#nick
-        input(type="text" placeholder="닉네임을 입력해주세요")
-        button Save
-        span
-      ul
-      form#message
-        input(type="text" placeholder="메세지를 입력해주세요")
-        button Send
+    div
+    main 
+      div#mainSection
+        div#roomAndChat
+          div#room
+            h3 방 목록 :
+            ul 
+          div#chat
+            h3
+            ul 
+        div#name
+          button
+          p 현재 닉네임
+            span
+          form
+            input(type="text" placeholder='닉네임' required)
+            button 저장
+      div#inputForm
+        form#enterRoom
+          input(type="text" placeholder='방 이름' required)
+          button 입장
+        form#msg
+          input(type="text" placeholder='메세지' required)
+          button 보내기
+    script(src="/socket.io/socket.io.js")
     script(src="/public/js/app.js")
