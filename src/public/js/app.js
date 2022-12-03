@@ -1,130 +1,227 @@
 const socket = io();
-const Chat = document.getElementById("chat");
-const Room = document.getElementById("room");
-const nameSection = document.getElementById("name");
-const enterRoom = document.getElementById("enterRoom");
-const msg = document.getElementById("msg");
-const namespan = nameSection.querySelector("span");
-const chageMainButton = nameSection.querySelector("button");
 
-// 첫 실행
-msg.hidden = true;
-Chat.hidden = true;
-chageMainButton.innerText = "방에 입장해주세요";
-chageMainButton.disabled = true;
+const myFace = document.getElementById("myFace");
+const muteBtn = document.getElementById("mute");
+const cameraBtn = document.getElementById("camera");
+const camerasSelect = document.getElementById("cameras");
+
+const welcome = document.getElementById("welcome");
+const call = document.getElementById("call");
+const chat = document.getElementById("chat");
+const chatlist = chat.querySelector("ul");
+const snedChat = chat.querySelector("button");
+
+call.style.display = "none";
+chat.hidden = true;
+
+let myStream;
+let muted = false;
+let cameraOff = false;
 let roomName;
-let mainMode = null;
-socket.emit("connecting");
+let myPeerConnection;
+let myDataChannel;
+let nickname;
+let sender
 
-// 화면 변경
-function showRoomSection() {
-  mainMode = 'room'
-  chageMainButton.disabled = false
-  chageMainButton.innerText = "채팅방으로 가기";
-  Room.hidden = false;
-  Chat.hidden = true;
-}
-function showChatSection() {
-  mainMode = 'chat'
-  chageMainButton.disabled = false
-  chageMainButton.innerText = "방 목록 보기";
-  Room.hidden = true;
-  Chat.hidden = false;
-}
-function changeMsgAndRoom(event) {
-  event.preventDefault();
-  if (mainMode === "chat") {
-    showRoomSection();
-  } else if (mainMode === "room") {
-    showChatSection();
+async function getCameras() {
+  try {
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    const cameras = devices.filter((device) => device.kind === "videoinput");
+    const currentCamera = myStream.getVideoTracks()[0];
+    cameras.forEach((camera) => {
+      const option = document.createElement("option");
+      option.value = camera.deviceId;
+      option.innerText = camera.label;
+      if (currentCamera.label === camera.label) option.selected = true;
+      camerasSelect.appendChild(option);
+    });
+  } catch (e) {
+    console.log(e);
   }
 }
-chageMainButton.addEventListener("click", changeMsgAndRoom);
 
-// 닉네임 변경
-function handleNicknameSubmit(event) {
+async function getMedia(deviceId) {
+  const initialConstrains = {
+    audio: true,
+    video: { facingMode: "user" },
+  };
+  const cameraConstraints = {
+    audio: true,
+    video: { deviceId: { exact: deviceId } },
+  };
+  try {
+    myStream = await navigator.mediaDevices.getUserMedia(
+      deviceId ? cameraConstraints : initialConstrains
+    );
+    myFace.srcObject = myStream;
+    if (!deviceId) await getCameras();
+  } catch (e) {
+    console.log(e);
+  }
+}
+
+function handleMuteClick() {
+  myStream
+    .getAudioTracks()
+    .forEach((track) => (track.enabled = !track.enabled));
+  if (!muted) {
+    muteBtn.innerText = "🔈";
+    muteBtn.style.backgroundColor = "#ff5252";
+    muted = true;
+  } else {
+    muteBtn.innerText = "🔊";
+    muteBtn.style = "";
+    muted = false;
+  }
+}
+function handleCameraClick() {
+  myStream
+    .getVideoTracks()
+    .forEach((track) => (track.enabled = !track.enabled));
+  if (cameraOff) {
+    cameraBtn.innerText = "🎥";
+    cameraBtn.style = "";
+    cameraOff = false;
+  } else {
+    cameraBtn.innerText = "⛔";
+    cameraBtn.style.backgroundColor = "#ff5252";
+    cameraOff = true;
+  }
+}
+async function handleCameraChange() {
+  await getMedia(camerasSelect.value);
+  if (myPeerConnection) {
+    const videoTrack = myStream.getVideoTracks()[0];
+    const videoSender = myPeerConnection
+      .getSenders()
+      .find((sender) => sender.track.kind === "video");
+    videoSender.replaceTrack(videoTrack);
+  }
+}
+
+muteBtn.addEventListener("click", handleMuteClick);
+cameraBtn.addEventListener("click", handleCameraClick);
+camerasSelect.addEventListener("input", handleCameraChange);
+
+// welcome form
+
+welcomeForm = welcome.querySelector("form");
+
+async function initCall() {
+  welcome.hidden = true;
+  call.style.display = "flex";
+  chat.hidden = false;
+  await getMedia();
+  makeConection();
+}
+
+async function handleWelcomeSubmit(event) {
   event.preventDefault();
-  const input = nameSection.querySelector("input");
-  socket.emit("nickname", input.value, roomName);
-  namespan.innerText = `${input.value}`;
-  input.value = "";
+  const roomnameInput = document.getElementById("roomname");
+  const nicknameInput = document.getElementById("nickname");
+  await initCall();
+  socket.emit("join_room", roomnameInput.value, () => {
+    addChat(`${nickname} 입장`);
+  });
+  roomName = roomnameInput.value;
+  roomnameInput.value = "";
+  nickname = nicknameInput.value;
+  nicknameInput.value = "";
 }
-const nameForm = nameSection.querySelector("form");
-nameForm.addEventListener("submit", handleNicknameSubmit);
 
-// 방 입장
-function handleRoomName(name, count) {
-  const h3 = Chat.querySelector("h3");
-  h3.innerText = `${name} (${count})`;
-}
-function showRoom(countRoom) {
-  handleRoomName(roomName, countRoom);
-  enterRoom.hidden = true;
-  msg.hidden = false;
-  msg.addEventListener("submit", handleMessagetSubmit);
-}
-function handleRoomSubmit(event) {
-  event.preventDefault();
-  const input = enterRoom.querySelector("input");
-  socket.emit("enter_room", input.value, showRoom);
-  roomName = input.value;
-  input.value = "";
-  showChatSection()
-}
-enterRoom.addEventListener("submit", handleRoomSubmit);
+welcomeForm.addEventListener("submit", handleWelcomeSubmit);
 
-// 메세지 보내기
-function addMessage(msg) {
-  const ul = Chat.querySelector("ul");
+// socket code
+
+socket.on("welcome", async () => {
+  myDataChannel = myPeerConnection.createDataChannel("chat");
+  myDataChannel.addEventListener("message", (event) => {
+    addChat(event.data);
+  });
+  const offer = await myPeerConnection.createOffer();
+  myPeerConnection.setLocalDescription(offer);
+  socket.emit("offer", offer, roomName);
+});
+
+socket.on("offer", async (offer) => {
+  myPeerConnection.addEventListener("datachannel", (event) => {
+    myDataChannel = event.channel;
+    myDataChannel.addEventListener("message", (event) => {
+      addChat(event.data);
+    });
+    myDataChannel.send(`${nickname} 입장`);
+  });
+  myPeerConnection.setRemoteDescription(offer);
+  const answer = await myPeerConnection.createAnswer();
+  myPeerConnection.setLocalDescription(answer);
+  socket.emit("answer", answer, roomName);
+});
+
+socket.on("answer", (answer) => {
+  myPeerConnection.setRemoteDescription(answer);
+});
+
+socket.on("ice", (ice) => {
+  myPeerConnection.addIceCandidate(ice);
+});
+
+socket.on("close", async () => {
+  console.log(myPeerConnection)
+  await myPeerConnection.removeTrack(sender)
+  console.log(myPeerConnection)
+  myPeerConnection.close()
+});
+
+// RTC Code
+
+function makeConection() {
+  myPeerConnection = new RTCPeerConnection({
+    iceServers: [
+      {
+        urls: [
+          "stun:stun.l.google.com:19302",
+          "stun:stun1.l.google.com:19302",
+          "stun:stun2.l.google.com:19302",
+          "stun:stun3.l.google.com:19302",
+          "stun:stun4.l.google.com:19302",
+        ],
+      },
+    ],
+  });
+  myPeerConnection.addEventListener("icecandidate", handleIce);
+  myPeerConnection.addEventListener("addstream", handleAddStream);
+  myStream
+    .getTracks()
+    .forEach((track) => sender = myPeerConnection.addTrack(track, myStream));
+}
+
+function handleIce(data) {
+  socket.emit("ice", data.candidate, roomName);
+}
+
+function handleAddStream(data) {
+  const peerFace = document.getElementById("peerFace");
+  peerFace.srcObject = data.stream;
+}
+
+// data channel
+function addChat(msg) {
   const li = document.createElement("li");
   li.innerText = msg;
-  ul.appendChild(li);
-  ul.scrollTop = ul.scrollHeight;
+  chatlist.appendChild(li);
+  chatlist.scrollTop = chatlist.scrollHeight;
 }
-function handleMessagetSubmit(event) {
+
+function handleChat(event) {
   event.preventDefault();
-  const input = msg.querySelector("input");
-  const value = input.value;
-  socket.emit("new_message", input.value, roomName, () => {
-    addMessage(`나 : ${value}`);
-  });
+  const input = chat.querySelector("input");
+  if (myDataChannel) {
+    addChat(`${nickname} : ${input.value}`);
+    myDataChannel.send(`${nickname} : ${input.value}`);
+  } else {
+    addChat(`상대방이 없습니다.`);
+  }
   input.value = "";
 }
 
-// 방 목록 보기
-function addRoomsList(rooms) {
-  const roomList = Room.querySelector("ul");
-  roomList.innerHTML = "";
-  if (rooms.length === 0) {
-    roomList.innerHTML = "";
-    return;
-  }
-  rooms.forEach((room) => {
-    const li = document.createElement("li");
-    li.innerText = room;
-    roomList.appendChild(li);
-  });
-}
-
-socket.on("connecting", (nickname, rooms) => {
-  namespan.innerText = nickname;
-  addRoomsList(rooms);
-});
-
-socket.on("welcome", (user, newCount) => {
-  handleRoomName(roomName, newCount);
-  addMessage(`${user} 입장`);
-});
-
-socket.on("bye", (left, newCount) => {
-  handleRoomName(roomName, newCount);
-  addMessage(`${left} 퇴장`);
-});
-
-socket.on("new_message", (msg) => {
-  addMessage(msg);
-});
-
-socket.on("room_change", (rooms) => {
-  addRoomsList(rooms);
-});
+snedChat.addEventListener("click", handleChat);
